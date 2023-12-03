@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 relm4 = "0.6.2"
 relm4-components = "0.6.2"
+relm4-macros = "0.6.2"

@@ -2,17 +2,12 @@ use std::time::{Duration, Instant};
 
 use gtk::prelude::*;
 use relm4::{
-    channel,
     gtk::{
         gdk::{Key, ModifierType},
         Inhibit,
     },
     prelude::*,
-    Sender,
 };
-
-#[derive(Default)]
-struct App {}
 
 struct Stats {
     duration_sum: Duration,
@@ -50,66 +45,94 @@ impl Stats {
     }
 }
 
-#[derive(Debug)]
-enum Msg {
-    KeyPressed(Key, u32, ModifierType, Instant),
-}
-
 #[relm4::component]
-impl SimpleComponent for App {
-    type Init = Sender<Msg>;
-    type Input = ();
+impl SimpleComponent for Stats {
+    type Init = Stats;
+    type Input = Msg;
     type Output = ();
 
     view! {
-          main_window = gtk::ApplicationWindow {
-              set_title: Some("Type Touching"),
-              set_default_size: (640, 800),
-              add_controller = gtk::EventControllerKey {
-                  /*
-                   * guint keyval,
-    guint keycode,
-    GdkModifierType state,
-    gpointer user_data
-                   */
-                  connect_key_pressed => move |_, keyval, keycode, state| {
-                      let now = Instant::now();
-                      let msg = Msg::KeyPressed(keyval, keycode, state, now);
-                      let _ = init.send(msg);
-                      Inhibit(false)
-
-                  }
-              },
-          },
-
-      }
+        gtk::Label {
+            #[watch]
+            set_label: &format!("{}/s", model.avg_key_s())
+        }
+    }
 
     fn init(
         init: Self::Init,
         root: &Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = Self {};
+        let model = init;
+        let widgets = view_output!();
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+        match msg {
+            Msg::KeyPressed(_, _, _, _) => self.add(msg),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Msg {
+    KeyPressed(Key, u32, ModifierType, Instant),
+}
+
+struct App {
+    stats: Controller<Stats>,
+}
+
+#[relm4::component]
+impl SimpleComponent for App {
+    type Init = ();
+    type Input = Msg;
+    type Output = Msg;
+
+    view! {
+        gtk::Window {
+            set_title: Some("Type Touching"),
+            set_default_size: (800, 640),
+            add_controller = gtk::EventControllerKey {
+                connect_key_pressed[sender] => move |_, keyval, keycode, state| {
+                    let now = Instant::now();
+                    sender.input(Msg::KeyPressed(keyval, keycode, state, now));
+                    Inhibit(false)
+                }
+            },
+            gtk::Box {
+              set_orientation: gtk::Orientation::Vertical,
+              set_spacing: 10,
+              #[local_ref]
+              my_stats -> gtk::Label {set_opacity: 0.7},
+            },
+        },
+
+    }
+
+    fn init(
+        _: Self::Init,
+        root: &Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let stats = Stats::builder().launch(Stats::new()).detach();
+        let model = App { stats };
+        let my_stats = model.stats.widget();
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
     }
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+        match msg {
+            Msg::KeyPressed(_, _, _, _) => {
+                self.stats.emit(msg);
+            }
+        }
+    }
 }
 
 fn main() {
-    let (tx, rx) = channel::<Msg>();
-    let mut stats = Stats::new();
-    let _backend = relm4::spawn(async move {
-        loop {
-            match rx.recv().await.expect("should be a msg") {
-                msg @ Msg::KeyPressed(k, _, modifier, time) => {
-                    stats.add(msg);
-                    println!("< key press {k} and modifier {modifier} as {time:?}");
-                    println!("avg key/s : {}", stats.avg_key_s())
-                }
-            }
-        }
-    });
     let app = RelmApp::new("TouchTyping Master");
-    app.run::<App>(tx);
+    app.run::<App>(());
 }
