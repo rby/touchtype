@@ -107,13 +107,12 @@ impl SimpleComponent for Stats {
 struct UpdateDrawingMsg;
 
 struct KeyboardState {
-    practice: session::Practice,
     handler: DrawHandler,
 }
 
 #[relm4::component]
 impl SimpleComponent for KeyboardState {
-    type Init = session::Practice;
+    type Init = ();
     type Input = Msg;
     type Output = ();
 
@@ -130,14 +129,14 @@ impl SimpleComponent for KeyboardState {
     }
 
     fn init(
-        practice: Self::Init,
+        _init: Self::Init,
         root: &Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         println!("Received an init");
         let handler = DrawHandler::new();
 
-        let model = KeyboardState { practice, handler };
+        let model = KeyboardState { handler };
         let area = model.handler.drawing_area();
 
         let widgets = view_output!();
@@ -169,7 +168,6 @@ impl SimpleComponent for KeyboardState {
                 row -= 1;
                 if let Some((cell, size)) = iter.next() {
                     if let Some(key) = key_pressed {
-                        println!("key name is {:?}", key.name());
                         if key
                             .name()
                             .is_some_and(|x| x.to_lowercase().as_str().eq_ignore_ascii_case(*cell))
@@ -180,7 +178,6 @@ impl SimpleComponent for KeyboardState {
                     cx.move_to(x, y);
                     cx.show_text(cell).expect("should display this char");
                     x += UNIT * size;
-                    println!("{i}, {row}: {cell}: {size}");
                 }
             }
             x = VSTART;
@@ -189,9 +186,75 @@ impl SimpleComponent for KeyboardState {
     }
 }
 
+struct PracticeComp {
+    practice: Practice,
+    handler: DrawHandler,
+}
+
+#[relm4::component]
+impl SimpleComponent for PracticeComp {
+    type Init = Practice;
+    type Input = Msg;
+    type Output = ();
+    view! {
+            gtk::Box {
+                #[local_ref]
+                area -> gtk::DrawingArea {
+                    set_vexpand: true,
+                    set_hexpand: true,
+                    inline_css: "border: 2px solid red",
+
+                },
+            }
+    }
+    fn init(
+        practice: Self::Init,
+        root: &Self::Root,
+        _sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        println!("Received an init");
+        let handler = DrawHandler::new();
+
+        let model = PracticeComp { practice, handler };
+        let area = model.handler.drawing_area();
+
+        let widgets = view_output!();
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+        println!("received an update");
+        let key_pressed = match message {
+            Msg::KeyPressed(k, _, _, _) => Some(k),
+        };
+        let cx = self.handler.get_context();
+        cx.select_font_face(
+            "Arial Black",
+            gtk::cairo::FontSlant::Normal,
+            gtk::cairo::FontWeight::Bold,
+        );
+
+        cx.set_source_rgb(0.0, 0.0, 0.0);
+        cx.set_font_size(18.0);
+        let mut x = VSTART;
+        let mut y = HSTART;
+        for (i, w) in self.practice.iter().take(25).enumerate() {
+            if i % 5 == 0 {
+                x = VSTART;
+                y += UNIT;
+            }
+            cx.move_to(x, y);
+            cx.show_text(w.into_str()).expect("prints the word");
+            x += 15.0 * w.len() as f64;
+        }
+    }
+}
+
 struct App {
     stats: Controller<Stats>,
     keyboard_state: Controller<KeyboardState>,
+    practice_comp: Controller<PracticeComp>,
 }
 
 #[relm4::component]
@@ -217,7 +280,9 @@ impl SimpleComponent for App {
               #[local_ref]
               my_stats -> gtk::Label {set_opacity: 0.7},
               #[local_ref]
-              my_ks -> gtk::Box {}
+              my_practice -> gtk::Box {},
+              #[local_ref]
+              my_ks -> gtk::Box {},
             },
         },
 
@@ -229,13 +294,16 @@ impl SimpleComponent for App {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let stats = Stats::builder().launch(Stats::new()).detach();
-        let keyboard_state = KeyboardState::builder().launch(practice).detach();
+        let keyboard_state = KeyboardState::builder().launch(()).detach();
+        let practice_comp = PracticeComp::builder().launch(practice).detach();
         let model = App {
             stats,
             keyboard_state,
+            practice_comp,
         };
         let my_stats = model.stats.widget();
         let my_ks = model.keyboard_state.widget();
+        let my_practice = model.practice_comp.widget();
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
@@ -245,6 +313,7 @@ impl SimpleComponent for App {
             Msg::KeyPressed(_, _, _, _) => {
                 self.stats.emit(msg.clone());
                 self.keyboard_state.emit(msg);
+                self.practice_comp.emit(msg);
             }
         }
     }

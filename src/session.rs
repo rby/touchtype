@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Error, Result};
-use std::path::Path;
+use std::{path::Path, vec::IntoIter};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -25,9 +25,9 @@ pub(crate) struct Practice {
 }
 
 #[derive(Clone, Debug)]
-struct Word(String);
+pub(crate) struct Word(String);
 
-struct Attempt {
+pub(crate) struct Attempt {
     words: Vec<Word>,
 }
 
@@ -35,9 +35,13 @@ impl Word {
     pub(crate) fn from(s: &str) -> Word {
         Word(s.to_string())
     }
+    pub(crate) fn into_str<'a>(&'a self) -> &'a str {
+        self.0.as_str()
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
 }
-
-struct WordDict {}
 
 impl Practice {
     pub(crate) fn generate<R: Rng>(rng: &mut R, size: usize, path: &Path) -> Result<Practice> {
@@ -61,5 +65,9 @@ impl Practice {
             .take(size)
             .collect();
         Ok(Practice { words })
+    }
+
+    pub(crate) fn iter<'a>(&'a self) -> std::slice::Iter<'a, Word> {
+        self.words.iter()
     }
 }
