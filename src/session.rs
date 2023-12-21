@@ -52,7 +52,7 @@ impl Practice {
                 |line| match line.split(" ").collect::<Vec<&str>>().as_slice() {
                     [word, count] => {
                         let count = count.parse::<i32>().ok()?;
-                        Some((Word(word.to_string()), count))
+                        Some((Word::from(word), count))
                     }
                     _ => None,
                 },
