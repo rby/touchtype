@@ -10,6 +10,7 @@ mod msg;
 mod session;
 mod stats;
 use crate::msg::Msg;
+use crate::session::ExpectedKey;
 use crate::stats::Stats;
 
 const UNIT: f64 = 30.0;
@@ -189,6 +190,17 @@ impl SimpleComponent for KeyboardState {
 struct PracticeComp {
     practice: Practice,
     handler: DrawHandler,
+    char_count: usize,
+}
+impl PracticeComp {
+    fn clear(&mut self) {
+        let cx = self.handler.get_context();
+
+        let op = cx.operator();
+        cx.set_operator(gtk::cairo::Operator::Clear);
+        cx.paint().expect("should paint");
+        cx.set_operator(op);
+    }
 }
 
 #[relm4::component]
@@ -215,7 +227,11 @@ impl SimpleComponent for PracticeComp {
         println!("Received an init");
         let handler = DrawHandler::new();
 
-        let model = PracticeComp { practice, handler };
+        let model = PracticeComp {
+            practice,
+            handler,
+            char_count: 0,
+        };
         let area = model.handler.drawing_area();
 
         let widgets = view_output!();
@@ -225,29 +241,74 @@ impl SimpleComponent for PracticeComp {
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         println!("received an update");
-        let key_pressed = match message {
-            Msg::KeyPressed(k, _, _, _) => Some(k),
-        };
-        let cx = self.handler.get_context();
-        cx.select_font_face(
-            "Arial Black",
-            gtk::cairo::FontSlant::Normal,
-            gtk::cairo::FontWeight::Bold,
-        );
+        match message {
+            Msg::KeyPressed(k, _, _, _) => {
+                let cx = self.handler.get_context();
 
-        cx.set_source_rgb(0.0, 0.0, 0.0);
-        cx.set_font_size(18.0);
-        let mut x = VSTART;
-        let mut y = HSTART;
-        for (i, w) in self.practice.iter().take(25).enumerate() {
-            if i % 5 == 0 {
-                x = VSTART;
-                y += UNIT;
+                // TODO we can also clear just one rectangle
+                self.clear();
+                cx.select_font_face(
+                    "Courier New",
+                    gtk::cairo::FontSlant::Normal,
+                    gtk::cairo::FontWeight::Normal,
+                );
+                cx.set_source_rgb(0.0, 0.0, 0.0);
+                cx.set_font_size(10.0);
+                cx.move_to(10.0, 10.0);
+                cx.show_text(
+                    format!("expected: {:?}", self.practice.expected_at(self.char_count)).as_str(),
+                )
+                .expect("display some debug");
+                // the real text
+                cx.select_font_face(
+                    "Arial Black",
+                    gtk::cairo::FontSlant::Normal,
+                    gtk::cairo::FontWeight::Bold,
+                );
+                cx.set_source_rgb(0.0, 0.0, 0.0);
+                cx.set_font_size(18.0);
+
+                let mut x = VSTART;
+                let mut y = HSTART;
+                let mut ci = 0;
+                for (i, w) in self.practice.iter().take(25).enumerate() {
+                    if i % 5 == 0 {
+                        x = VSTART;
+                        y += UNIT;
+                    }
+                    cx.move_to(x, y);
+                    for c in w.into_str().chars() {
+                        if ci < self.char_count {
+                            // gray
+                            cx.set_source_rgb(0.5, 0.5, 0.5);
+                        } else if ci == self.char_count {
+                            let expected = self.practice.expected_at(self.char_count);
+                            match expected {
+                                Some(ExpectedKey::Char(c)) if Some(c) == k.to_unicode() => {
+                                    cx.set_source_rgb(0.0, 1.0, 0.0)
+                                }
+                                Some(ExpectedKey::Space) if k.to_unicode() == Some(' ') => {
+                                    cx.set_source_rgb(0.0, 1.0, 0.0)
+                                }
+                                None => {
+                                    println!("not expecting anymore keys");
+                                }
+                                _ => cx.set_source_rgb(1.0, 0.0, 0.0),
+                            }
+                        } else {
+                            cx.set_source_rgb(0.0, 0.0, 0.0);
+                        }
+                        cx.show_text(c.to_string().as_str())
+                            .expect("prints the char");
+                        x += 10.0;
+                        ci += 1;
+                    }
+                    ci += 1;
+                    x += 20.0;
+                }
+                self.char_count += 1;
             }
-            cx.move_to(x, y);
-            cx.show_text(w.into_str()).expect("prints the word");
-            x += 15.0 * w.len() as f64;
-        }
+        };
     }
 }
 
