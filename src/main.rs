@@ -14,6 +14,7 @@ use crate::session::Touch;
 use crate::stats::Stats;
 
 const UNIT: f64 = 30.0;
+const WORDS_PER_LINE: usize = 5;
 // TODO should be parsed from some resource files
 const QWERTY: &[(&str, f64)] = &[
     ("`", 1.0),
@@ -125,7 +126,6 @@ impl SimpleComponent for KeyboardState {
                     set_vexpand: true,
                     set_hexpand: true,
                     inline_css: "border: 2px solid blue",
-
                 },
             },
     }
@@ -148,41 +148,40 @@ impl SimpleComponent for KeyboardState {
 
     fn update(&mut self, _message: Self::Input, _sender: ComponentSender<Self>) {
         println!("received an update");
-        let key_pressed = match _message {
-            Msg::KeyPressed(k, _, _, _) => Some(k),
-        };
-        let cx = self.handler.get_context();
-        cx.select_font_face(
-            "Arial Black",
-            gtk::cairo::FontSlant::Normal,
-            gtk::cairo::FontWeight::Bold,
-        );
+        match _message {
+            Msg::KeyPressed(k, _, _, _) => {
+                let cx = self.handler.get_context();
+                cx.select_font_face(
+                    "Arial Black",
+                    gtk::cairo::FontSlant::Normal,
+                    gtk::cairo::FontWeight::Bold,
+                );
 
-        cx.set_source_rgb(0.0, 0.0, 0.0);
-        cx.set_font_size(18.0);
-        let mut x = VSTART;
-        let mut y = HSTART;
-        let mut iter = QWERTY.iter();
-        for row in LAYOUT {
-            for _ in 0..*row {
                 cx.set_source_rgb(0.0, 0.0, 0.0);
-                if let Some((cell, size)) = iter.next() {
-                    if let Some(key) = key_pressed {
-                        if key
-                            .name()
-                            .is_some_and(|x| x.to_lowercase().as_str().eq_ignore_ascii_case(*cell))
-                        {
-                            cx.set_source_rgb(0.0, 1.0, 0.0);
+                cx.set_font_size(18.0);
+                let mut x = VSTART;
+                let mut y = HSTART;
+                let mut iter = QWERTY.iter();
+                for row in LAYOUT {
+                    for _ in 0..*row {
+                        cx.set_source_rgb(0.0, 0.0, 0.0);
+                        if let Some((cell, size)) = iter.next() {
+                            match k.name() {
+                                Some(x) if x.eq_ignore_ascii_case(*cell) => {
+                                    cx.set_source_rgb(0.0, 1.0, 0.0)
+                                }
+                                _ => (),
+                            };
+                            cx.move_to(x, y);
+                            cx.show_text(cell).expect("should display this char");
+                            x += UNIT * size;
                         }
                     }
-                    cx.move_to(x, y);
-                    cx.show_text(cell).expect("should display this char");
-                    x += UNIT * size;
+                    x = VSTART;
+                    y += UNIT;
                 }
             }
-            x = VSTART;
-            y += UNIT;
-        }
+        };
     }
 }
 
@@ -255,10 +254,12 @@ impl SimpleComponent for PracticeComp {
                 cx.set_source_rgb(0.0, 0.0, 0.0);
                 cx.set_font_size(10.0);
                 cx.move_to(10.0, 10.0);
-                cx.show_text(
-                    format!("next: {:?}", self.practice.expected_at(self.char_count + 1)).as_str(),
-                )
-                .expect("display some debug");
+                let to_debug = match self.practice.expected_at(self.char_count + 1) {
+                    Some(Touch::Space) => "<space>".to_string(),
+                    Some(Touch::Char(c)) => c.to_string(),
+                    None => "<END>".to_string(),
+                };
+                cx.show_text(to_debug.as_str()).expect("display some debug");
                 // the real text
                 cx.select_font_face(
                     "Arial Black",
@@ -272,8 +273,8 @@ impl SimpleComponent for PracticeComp {
                 let mut y = HSTART;
                 let mut cw = 0;
                 for (ci, (c, i)) in self.practice.iter().enumerate() {
-                    // 5 words per line
-                    if i != cw && i % 5 == 0 {
+                    // reset x and go down every WORDS_PER_LINE words
+                    if i != cw && i % WORDS_PER_LINE == 0 {
                         x = VSTART;
                         y += UNIT;
                     }
@@ -285,6 +286,7 @@ impl SimpleComponent for PracticeComp {
                     }
                     cx.move_to(x, y);
                     if ci < self.char_count {
+                        // gray down previous touched keys
                         if let Some(&true) = self.attempt.get(ci) {
                             cx.set_source_rgb(0.5, 0.5, 0.5);
                         } else {
@@ -307,32 +309,41 @@ impl SimpleComponent for PracticeComp {
                         }
                     } else {
                         cx.set_source_rgb(0.0, 0.0, 0.0);
-                        // next char
                         if ci == self.char_count + 1 {
+                            // display an underline for the next char
                             cx.move_to(x, y + UNIT / 5.0);
                             cx.show_text("_").expect("underline");
                             cx.move_to(x, y);
                         }
                     }
-                    if c == Touch::Space {
-                        cx.show_text(".").expect("print the char");
-                        x += cx.text_extents(".").unwrap().width();
-                        x += 7.0;
-                    } else {
-                        let text = c.to_string();
+                    match c {
+                        Touch::Space => {
+                            cx.show_text(".").expect("print the char");
+                            x += cx.text_extents(".").unwrap().width();
+                            x += 7.0;
+                        }
+                        Touch::Char(c) => {
+                            let text = c.to_string();
 
-                        cx.show_text(text.as_str()).expect("prints the char");
-                        x += cx.text_extents(text.as_str()).unwrap().width()
-                            + (if vec!["w", "x", "y"].contains(&text.as_str()) {
-                                1.0
-                            } else {
-                                1.5
-                            });
+                            cx.show_text(text.as_str()).expect("prints the char");
+                            x += cx.text_extents(text.as_str()).unwrap().width()
+                                + char_adjust_width(c);
+                        }
                     }
                 }
                 self.char_count += 1;
             }
         };
+    }
+}
+
+/// Returns the space after the width of the char to adjust for
+/// specific chars
+fn char_adjust_width(c: char) -> f64 {
+    match c {
+        'i' | 'l' => 1.2,
+        'w' | 'x' | 'y' => 0.8,
+        _ => 1.0,
     }
 }
 
