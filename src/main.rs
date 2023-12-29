@@ -1,3 +1,4 @@
+use comp::stats::StatsComp;
 use gtk::prelude::*;
 use rand::thread_rng;
 use relm4::drawing::DrawHandler;
@@ -6,6 +7,7 @@ use session::{Practice, TouchState};
 use std::path::Path;
 use std::time::Instant;
 
+mod comp;
 mod msg;
 mod session;
 mod stats;
@@ -77,36 +79,6 @@ const QWERTY: &'static [(&str, f64)] = &[
 const LAYOUT: &'static [usize] = &[14, 14, 13, 12, 1];
 const HSTART: f64 = 100.0;
 const VSTART: f64 = 100.0;
-
-#[relm4::component]
-impl SimpleComponent for Stats {
-    type Init = Stats;
-    type Input = Msg;
-    type Output = ();
-
-    view! {
-        gtk::Label {
-            #[watch]
-            set_label: &format!("{}/s", model.avg_key_s())
-        }
-    }
-
-    fn init(
-        init: Self::Init,
-        root: &Self::Root,
-        _sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
-        let model = init;
-        let widgets = view_output!();
-        ComponentParts { model, widgets }
-    }
-
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
-        match msg {
-            Msg::KeyPressed(_, _, _, _) => self.add(msg),
-        }
-    }
-}
 
 #[derive(Debug)]
 struct UpdateDrawingMsg;
@@ -334,7 +306,7 @@ fn char_adjust_width(c: char) -> f64 {
 }
 
 struct App {
-    stats: Controller<Stats>,
+    stats: Controller<StatsComp>,
     keyboard_state: Controller<KeyboardState>,
     practice_comp: Controller<PracticeComp>,
 }
@@ -377,7 +349,7 @@ impl SimpleComponent for App {
         root: &Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let stats = Stats::builder().launch(Stats::new()).detach();
+        let stats = StatsComp::builder().launch(Stats::new()).detach();
         let keyboard_state = KeyboardState::builder().launch(()).detach();
         let practice_comp = PracticeComp::builder().launch(practice).detach();
         let model = App {
