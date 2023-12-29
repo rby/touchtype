@@ -187,6 +187,7 @@ struct PracticeComp {
     practice: Practice,
     handler: DrawHandler,
 }
+
 impl PracticeComp {
     fn clear(&mut self) {
         let cx = self.handler.get_context();
@@ -240,6 +241,8 @@ impl PracticeComp {
             cx.move_to(x, y);
             // reset
             cx.set_source_rgb(0.0, 0.0, 0.0);
+            // setup the color and any needed decoration that is function
+            // of the state of the practice for each touch
             match state {
                 TouchState::Next => {
                     // display an underline for the next char
@@ -247,7 +250,6 @@ impl PracticeComp {
                     cx.show_text("_").expect("underline");
                     cx.move_to(x, y);
                 }
-                TouchState::Future => {}
                 TouchState::Current => {
                     if self.practice.check(&t) == Some(true) {
                         cx.set_source_rgb(0.0, 1.0, 0.0);
@@ -262,7 +264,9 @@ impl PracticeComp {
                 TouchState::Attempted(false) => {
                     cx.set_source_rgb(0.8, 0.5, 0.5);
                 }
+                TouchState::Future => {}
             }
+            // draws the char itself
             match c {
                 Touch::Space => {
                     cx.show_text(".").expect("print the char");
