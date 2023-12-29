@@ -18,6 +18,7 @@ const VSTART: f64 = 100.0;
 pub(crate) struct PracticeComp {
     practice: Practice,
     handler: DrawHandler,
+    saved: bool,
 }
 
 impl<'a> HasDrawHandler<'a> for PracticeComp {
@@ -117,7 +118,7 @@ impl PracticeComp {
 impl SimpleComponent for PracticeComp {
     type Init = Practice;
     type Input = Msg;
-    type Output = ();
+    type Output = Msg;
     view! {
             gtk::Box {
                 #[local_ref]
@@ -135,7 +136,11 @@ impl SimpleComponent for PracticeComp {
     ) -> ComponentParts<Self> {
         let handler = DrawHandler::new();
 
-        let model = PracticeComp { practice, handler };
+        let model = PracticeComp {
+            practice,
+            handler,
+            saved: false,
+        };
         let area = model.handler.drawing_area();
 
         let widgets = view_output!();
@@ -143,12 +148,20 @@ impl SimpleComponent for PracticeComp {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
-            Msg::KeyPressed(_, t, _, _) => {
+            Msg::KeyPressed(_, t, _, _) if !self.saved => {
                 self.draw(&t);
-                self.practice.press(&t);
+                if self.practice.press(&t).is_none() {
+                    let p = self.practice.clone();
+                    println!("practice saved to {}", p.name());
+                    sender
+                        .output(Msg::PracticeEnd(p))
+                        .expect("should output End event");
+                    self.saved = true;
+                }
             }
+            _ => (),
         };
     }
 }

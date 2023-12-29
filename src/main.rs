@@ -5,6 +5,7 @@ use gtk::prelude::*;
 use rand::thread_rng;
 use relm4::{gtk::Inhibit, prelude::*};
 use session::Practice;
+use std::convert::identity;
 use std::path::Path;
 use std::time::Instant;
 
@@ -66,7 +67,9 @@ impl SimpleComponent for App {
     ) -> ComponentParts<Self> {
         let stats = StatsComp::builder().launch(Stats::new()).detach();
         let keyboard_state = KeyboardState::builder().launch(()).detach();
-        let practice_comp = PracticeComp::builder().launch(practice).detach();
+        let practice_comp = PracticeComp::builder()
+            .launch(practice)
+            .forward(sender.input_sender(), identity);
         let model = App {
             stats,
             keyboard_state,
@@ -82,9 +85,16 @@ impl SimpleComponent for App {
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
             Msg::KeyPressed(_, _, _, _) => {
-                self.stats.emit(msg);
-                self.keyboard_state.emit(msg);
-                self.practice_comp.emit(msg);
+                self.stats.emit(msg.clone());
+                self.keyboard_state.emit(msg.clone());
+                self.practice_comp.emit(msg.clone());
+            }
+            Msg::PracticeEnd(practice) => {
+                let home = env!("HOME");
+                let path = Path::new(home).join(".config/touchtype");
+                practice
+                    .save(path.as_path())
+                    .expect("practice should be saved");
             }
         }
     }

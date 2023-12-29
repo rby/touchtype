@@ -1,7 +1,5 @@
 use std::time::{Duration, Instant};
 
-use crate::msg::Msg;
-
 pub(crate) struct Stats {
     duration_sum: Duration,
     last_key: Option<Instant>,
@@ -9,17 +7,13 @@ pub(crate) struct Stats {
 }
 
 impl Stats {
-    pub(crate) fn add(&mut self, msg: Msg) {
-        match msg {
-            Msg::KeyPressed(_, _, _, ts) => {
-                self.count += 1;
-                self.duration_sum += match self.last_key {
-                    Some(last_key) => ts.duration_since(last_key),
-                    None => Duration::ZERO,
-                };
-                self.last_key = Some(ts);
-            }
-        }
+    pub(crate) fn add(&mut self, ts: Instant) {
+        self.count += 1;
+        self.duration_sum += match self.last_key {
+            Some(last_key) => ts.duration_since(last_key),
+            None => Duration::ZERO,
+        };
+        self.last_key = Some(ts);
     }
 
     pub(crate) fn avg_key_s(&self) -> f32 {

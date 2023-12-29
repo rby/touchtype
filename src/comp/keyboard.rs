@@ -137,6 +137,7 @@ impl SimpleComponent for KeyboardState {
                     y += UNIT;
                 }
             }
+            _ => (),
         };
     }
 }

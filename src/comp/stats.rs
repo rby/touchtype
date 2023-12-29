@@ -32,7 +32,8 @@ impl SimpleComponent for StatsComp {
 
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
-            Msg::KeyPressed(_, _, _, _) => self.0.add(msg),
+            Msg::KeyPressed(_, _, _, ts) => self.0.add(ts),
+            _ => (),
         }
     }
 }

@@ -1,11 +1,20 @@
 use anyhow::{Context, Result};
-use std::{fmt::Display, path::Path, str::FromStr};
+use std::{
+    fmt::Display,
+    fs,
+    io::Write,
+    path::Path,
+    str::FromStr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub(crate) enum TouchTypingError {
     #[error("a 'word count' was expected")]
     FileParseError,
+    #[error("invalid path")]
+    InvalidPathError,
 }
 use rand::{
     distributions::{Distribution, WeightedIndex},
@@ -43,7 +52,7 @@ impl Touch {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Challenge {
     words: Vec<Word>,
     total_count: usize, // total count of chars including spaces
@@ -165,7 +174,7 @@ impl<'a> Iterator for CIter<'a> {
 #[derive(Clone, Debug)]
 pub(crate) struct Word(String);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Attempt {
     keys: Vec<bool>,
 }
@@ -196,28 +205,46 @@ impl Word {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Practice {
     challenge: Challenge,
     attempt: Attempt,
+    name: String,
     /// max(index of next touch in the challenge, challenge.len())
     cursor: usize,
 }
 
 impl std::fmt::Debug for Practice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.challenge.expected_at(self.cursor))
+        write!(
+            f,
+            "expected = {:?}",
+            self.challenge.expected_at(self.cursor)
+        )
+    }
+}
+impl std::fmt::Display for Practice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "expected = {:?}",
+            self.challenge.expected_at(self.cursor)
+        )
     }
 }
 
 impl Practice {
     pub(crate) fn generate<R: Rng>(rng: &mut R, size: usize, path: &Path) -> Result<Practice> {
         let challenge = Challenge::generate(rng, size, path)?;
-        Ok(Self::new(challenge))
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let name = format!("practice_{}.json", now.as_secs());
+        Ok(Self::new(challenge, name))
     }
-    pub(crate) fn new(challenge: Challenge) -> Practice {
+    pub(crate) fn new(challenge: Challenge, name: String) -> Practice {
         Practice {
             challenge,
             attempt: Attempt::new(),
+            name,
             cursor: 0,
         }
     }
@@ -230,17 +257,39 @@ impl Practice {
         }
     }
 
+    pub(crate) fn name<'a>(&'a self) -> &'a String {
+        &self.name
+    }
+
+    pub(crate) fn save(self, path: &Path) -> Result<String> {
+        let path = path.join(self.name);
+        let path = path.as_path();
+        let succ = self.attempt.keys.iter().filter(|x| **x).count();
+        let total = self.attempt.keys.len();
+        let mut f = fs::File::create(&path).context(format!("cannot create file at {:?}", path))?;
+        writeln!(f, "total = {}", total)?;
+        writeln!(f, "succ = {}", succ)?;
+
+        let path = path.to_str().ok_or(TouchTypingError::InvalidPathError)?;
+        Ok(path.to_string())
+    }
+
+    ///
+    /// Returns if the touch is the expected one or None if
+    /// no more touches are expected.
     pub(crate) fn check(&self, touch: &Touch) -> Option<bool> {
         let expected = self.challenge.expected_at(self.cursor);
-        println!("Expected: {expected:?}, got: {touch:?}");
 
         expected.map(|e| e == *touch)
     }
 
-    pub(crate) fn press(&mut self, touch: &Touch) {
+    pub(crate) fn press(&mut self, touch: &Touch) -> Option<bool> {
         if let Some(success) = self.check(touch) {
             self.attempt.add(success);
             self.cursor += 1;
+            Some(success)
+        } else {
+            None
         }
     }
 }
