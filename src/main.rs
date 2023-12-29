@@ -2,7 +2,7 @@ use gtk::prelude::*;
 use rand::thread_rng;
 use relm4::drawing::DrawHandler;
 use relm4::{gtk::Inhibit, prelude::*};
-use session::{Attempt, Practice};
+use session::{Practice, TouchState};
 use std::path::Path;
 use std::time::Instant;
 
@@ -135,7 +135,6 @@ impl SimpleComponent for KeyboardState {
         root: &Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        println!("Received an init");
         let handler = DrawHandler::new();
 
         let model = KeyboardState { handler };
@@ -147,7 +146,6 @@ impl SimpleComponent for KeyboardState {
     }
 
     fn update(&mut self, _message: Self::Input, _sender: ComponentSender<Self>) {
-        println!("received an update");
         match _message {
             Msg::KeyPressed(k, _, _, _) => {
                 let cx = self.handler.get_context();
@@ -189,7 +187,6 @@ struct PracticeComp {
     practice: Practice,
     handler: DrawHandler,
     char_count: usize,
-    attempt: Attempt,
 }
 impl PracticeComp {
     fn clear(&mut self) {
@@ -222,14 +219,12 @@ impl SimpleComponent for PracticeComp {
         root: &Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        println!("Received an init");
         let handler = DrawHandler::new();
 
         let model = PracticeComp {
             practice,
             handler,
             char_count: 0,
-            attempt: Attempt::new(),
         };
         let area = model.handler.drawing_area();
 
@@ -239,7 +234,6 @@ impl SimpleComponent for PracticeComp {
     }
 
     fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
-        println!("received an update");
         match message {
             Msg::KeyPressed(k, _, _, _) => {
                 let cx = self.handler.get_context();
@@ -254,12 +248,9 @@ impl SimpleComponent for PracticeComp {
                 cx.set_source_rgb(0.0, 0.0, 0.0);
                 cx.set_font_size(10.0);
                 cx.move_to(10.0, 10.0);
-                let to_debug = match self.practice.expected_at(self.char_count + 1) {
-                    Some(Touch::Space) => "<space>".to_string(),
-                    Some(Touch::Char(c)) => c.to_string(),
-                    None => "<END>".to_string(),
-                };
-                cx.show_text(to_debug.as_str()).expect("display some debug");
+                let debug_text = format!("{:?}", self.practice);
+                cx.show_text(debug_text.as_str())
+                    .expect("display some debug");
                 // the real text
                 cx.select_font_face(
                     "Arial Black",
@@ -272,7 +263,7 @@ impl SimpleComponent for PracticeComp {
                 let mut x = VSTART;
                 let mut y = HSTART;
                 let mut cw = 0;
-                for (ci, (c, i)) in self.practice.iter().enumerate() {
+                for (c, state, i) in self.practice.iter() {
                     // reset x and go down every WORDS_PER_LINE words
                     if i != cw && i % WORDS_PER_LINE == 0 {
                         x = VSTART;
@@ -285,35 +276,35 @@ impl SimpleComponent for PracticeComp {
                         x += 7.0;
                     }
                     cx.move_to(x, y);
-                    if ci < self.char_count {
-                        // gray down previous touched keys
-                        if let Some(&true) = self.attempt.get(ci) {
-                            cx.set_source_rgb(0.5, 0.5, 0.5);
-                        } else {
-                            cx.set_source_rgb(0.8, 0.5, 0.5);
-                        }
-                    } else if ci == self.char_count {
-                        match c {
-                            Touch::Char(ch) if Some(ch) == k.to_unicode() => {
-                                cx.set_source_rgb(0.0, 1.0, 0.0);
-                                self.attempt.add(true)
-                            }
-                            Touch::Space if k.to_unicode() == Some(' ') => {
-                                cx.set_source_rgb(0.0, 1.0, 0.0);
-                                self.attempt.add(true)
-                            }
-                            _ => {
-                                cx.set_source_rgb(1.0, 0.0, 0.0);
-                                self.attempt.add(false)
-                            }
-                        }
-                    } else {
-                        cx.set_source_rgb(0.0, 0.0, 0.0);
-                        if ci == self.char_count + 1 {
+                    // reset
+                    cx.set_source_rgb(0.0, 0.0, 0.0);
+                    match state {
+                        TouchState::Next => {
                             // display an underline for the next char
                             cx.move_to(x, y + UNIT / 5.0);
                             cx.show_text("_").expect("underline");
                             cx.move_to(x, y);
+                        }
+                        TouchState::Future => {}
+                        TouchState::Current => {
+                            if let Some(success) = k
+                                .to_unicode()
+                                .map(Touch::from)
+                                .and_then(|t| self.practice.check(&t))
+                            {
+                                if success {
+                                    cx.set_source_rgb(0.0, 1.0, 0.0);
+                                } else {
+                                    cx.set_source_rgb(1.0, 0.0, 0.0);
+                                }
+                            }
+                        }
+
+                        TouchState::Attempted(true) => {
+                            cx.set_source_rgb(0.5, 0.5, 0.5);
+                        }
+                        TouchState::Attempted(false) => {
+                            cx.set_source_rgb(0.8, 0.5, 0.5);
                         }
                     }
                     match c {
@@ -330,6 +321,9 @@ impl SimpleComponent for PracticeComp {
                                 + char_adjust_width(c);
                         }
                     }
+                }
+                if let Some(t) = k.to_unicode().map(Touch::from) {
+                    self.practice.press(&t);
                 }
                 self.char_count += 1;
             }
@@ -407,7 +401,7 @@ impl SimpleComponent for App {
     fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
             Msg::KeyPressed(_, _, _, _) => {
-                self.stats.emit(msg.clone());
+                self.stats.emit(msg);
                 self.keyboard_state.emit(msg);
                 self.practice_comp.emit(msg);
             }
@@ -419,9 +413,8 @@ impl SimpleComponent for App {
 fn main() {
     let app = RelmApp::new("TouchTyping Master");
     let mut rng = thread_rng();
-    let practice =
-        session::Practice::generate(&mut rng, 25, Path::new("./data/t8.shakespeare.freq"))
-            .expect("should load correctly");
+    let practice = Practice::generate(&mut rng, 25, Path::new("./data/t8.shakespeare.freq"))
+        .expect("should load correctly");
     println!("next practice is : {practice:?}");
     app.run::<App>(practice);
 }
