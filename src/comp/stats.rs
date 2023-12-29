@@ -5,7 +5,6 @@ use relm4::SimpleComponent;
 
 use crate::{msg::Msg, stats::Stats};
 
-// puts Stats comp implem here
 pub(crate) struct StatsComp(Stats);
 
 #[relm4::component(pub)]
