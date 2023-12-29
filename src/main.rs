@@ -9,14 +9,16 @@ use std::time::Instant;
 mod msg;
 mod session;
 mod stats;
+mod utils;
 use crate::msg::Msg;
 use crate::session::Touch;
 use crate::stats::Stats;
+use crate::utils::{Clear, HasDrawHandler};
 
 const UNIT: f64 = 30.0;
 const WORDS_PER_LINE: usize = 5;
 // TODO should be parsed from some resource files
-const QWERTY: &[(&str, f64)] = &[
+const QWERTY: &'static [(&str, f64)] = &[
     ("`", 1.0),
     ("1", 1.0),
     ("2", 1.0),
@@ -72,7 +74,7 @@ const QWERTY: &[(&str, f64)] = &[
     ("shift", 3.0), // line 4
     ("space", 10.0),
 ];
-const LAYOUT: &[usize] = &[14, 14, 13, 12, 1];
+const LAYOUT: &'static [usize] = &[14, 14, 13, 12, 1];
 const HSTART: f64 = 100.0;
 const VSTART: f64 = 100.0;
 
@@ -188,16 +190,13 @@ struct PracticeComp {
     handler: DrawHandler,
 }
 
-impl PracticeComp {
-    fn clear(&mut self) {
-        let cx = self.handler.get_context();
-
-        let op = cx.operator();
-        cx.set_operator(gtk::cairo::Operator::Clear);
-        cx.paint().expect("should paint");
-        cx.set_operator(op);
+impl<'a> HasDrawHandler<'a> for PracticeComp {
+    fn draw_handler_mut(&'a mut self) -> &'a mut DrawHandler {
+        &mut self.handler
     }
+}
 
+impl PracticeComp {
     fn draw(&mut self, t: &Touch) {
         let cx = self.handler.get_context();
 
