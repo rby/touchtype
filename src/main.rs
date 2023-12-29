@@ -186,7 +186,6 @@ impl SimpleComponent for KeyboardState {
 struct PracticeComp {
     practice: Practice,
     handler: DrawHandler,
-    char_count: usize,
 }
 impl PracticeComp {
     fn clear(&mut self) {
@@ -196,6 +195,88 @@ impl PracticeComp {
         cx.set_operator(gtk::cairo::Operator::Clear);
         cx.paint().expect("should paint");
         cx.set_operator(op);
+    }
+
+    fn draw(&mut self, t: &Touch) {
+        let cx = self.handler.get_context();
+
+        // TODO we can also clear just one rectangle
+        self.clear();
+        cx.select_font_face(
+            "Courier New",
+            gtk::cairo::FontSlant::Normal,
+            gtk::cairo::FontWeight::Normal,
+        );
+        cx.set_source_rgb(0.0, 0.0, 0.0);
+        cx.set_font_size(10.0);
+        cx.move_to(10.0, 10.0);
+        let debug_text = format!("{:?}", self.practice);
+        cx.show_text(debug_text.as_str())
+            .expect("display some debug");
+        // the real text
+        cx.select_font_face(
+            "Arial Black",
+            gtk::cairo::FontSlant::Normal,
+            gtk::cairo::FontWeight::Bold,
+        );
+        cx.set_source_rgb(0.0, 0.0, 0.0);
+        cx.set_font_size(18.0);
+
+        let mut x = VSTART;
+        let mut y = HSTART;
+        let mut cw = 0;
+        for (c, state, i) in self.practice.iter() {
+            // reset x and go down every WORDS_PER_LINE words
+            if i != cw && i % WORDS_PER_LINE == 0 {
+                x = VSTART;
+                y += UNIT;
+            }
+            if cw != i {
+                cw += 1;
+            }
+            if c == Touch::Space {
+                x += 7.0;
+            }
+            cx.move_to(x, y);
+            // reset
+            cx.set_source_rgb(0.0, 0.0, 0.0);
+            match state {
+                TouchState::Next => {
+                    // display an underline for the next char
+                    cx.move_to(x, y + UNIT / 5.0);
+                    cx.show_text("_").expect("underline");
+                    cx.move_to(x, y);
+                }
+                TouchState::Future => {}
+                TouchState::Current => {
+                    if self.practice.check(&t) == Some(true) {
+                        cx.set_source_rgb(0.0, 1.0, 0.0);
+                    } else {
+                        cx.set_source_rgb(1.0, 0.0, 0.0);
+                    }
+                }
+
+                TouchState::Attempted(true) => {
+                    cx.set_source_rgb(0.5, 0.5, 0.5);
+                }
+                TouchState::Attempted(false) => {
+                    cx.set_source_rgb(0.8, 0.5, 0.5);
+                }
+            }
+            match c {
+                Touch::Space => {
+                    cx.show_text(".").expect("print the char");
+                    x += cx.text_extents(".").unwrap().width();
+                    x += 7.0;
+                }
+                Touch::Char(c) => {
+                    let text = c.to_string();
+
+                    cx.show_text(text.as_str()).expect("prints the char");
+                    x += cx.text_extents(text.as_str()).unwrap().width() + char_adjust_width(c);
+                }
+            }
+        }
     }
 }
 
@@ -221,11 +302,7 @@ impl SimpleComponent for PracticeComp {
     ) -> ComponentParts<Self> {
         let handler = DrawHandler::new();
 
-        let model = PracticeComp {
-            practice,
-            handler,
-            char_count: 0,
-        };
+        let model = PracticeComp { practice, handler };
         let area = model.handler.drawing_area();
 
         let widgets = view_output!();
@@ -235,97 +312,9 @@ impl SimpleComponent for PracticeComp {
 
     fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
         match message {
-            Msg::KeyPressed(k, _, _, _) => {
-                let cx = self.handler.get_context();
-
-                // TODO we can also clear just one rectangle
-                self.clear();
-                cx.select_font_face(
-                    "Courier New",
-                    gtk::cairo::FontSlant::Normal,
-                    gtk::cairo::FontWeight::Normal,
-                );
-                cx.set_source_rgb(0.0, 0.0, 0.0);
-                cx.set_font_size(10.0);
-                cx.move_to(10.0, 10.0);
-                let debug_text = format!("{:?}", self.practice);
-                cx.show_text(debug_text.as_str())
-                    .expect("display some debug");
-                // the real text
-                cx.select_font_face(
-                    "Arial Black",
-                    gtk::cairo::FontSlant::Normal,
-                    gtk::cairo::FontWeight::Bold,
-                );
-                cx.set_source_rgb(0.0, 0.0, 0.0);
-                cx.set_font_size(18.0);
-
-                let mut x = VSTART;
-                let mut y = HSTART;
-                let mut cw = 0;
-                for (c, state, i) in self.practice.iter() {
-                    // reset x and go down every WORDS_PER_LINE words
-                    if i != cw && i % WORDS_PER_LINE == 0 {
-                        x = VSTART;
-                        y += UNIT;
-                    }
-                    if cw != i {
-                        cw += 1;
-                    }
-                    if c == Touch::Space {
-                        x += 7.0;
-                    }
-                    cx.move_to(x, y);
-                    // reset
-                    cx.set_source_rgb(0.0, 0.0, 0.0);
-                    match state {
-                        TouchState::Next => {
-                            // display an underline for the next char
-                            cx.move_to(x, y + UNIT / 5.0);
-                            cx.show_text("_").expect("underline");
-                            cx.move_to(x, y);
-                        }
-                        TouchState::Future => {}
-                        TouchState::Current => {
-                            if let Some(success) = k
-                                .to_unicode()
-                                .map(Touch::from)
-                                .and_then(|t| self.practice.check(&t))
-                            {
-                                if success {
-                                    cx.set_source_rgb(0.0, 1.0, 0.0);
-                                } else {
-                                    cx.set_source_rgb(1.0, 0.0, 0.0);
-                                }
-                            }
-                        }
-
-                        TouchState::Attempted(true) => {
-                            cx.set_source_rgb(0.5, 0.5, 0.5);
-                        }
-                        TouchState::Attempted(false) => {
-                            cx.set_source_rgb(0.8, 0.5, 0.5);
-                        }
-                    }
-                    match c {
-                        Touch::Space => {
-                            cx.show_text(".").expect("print the char");
-                            x += cx.text_extents(".").unwrap().width();
-                            x += 7.0;
-                        }
-                        Touch::Char(c) => {
-                            let text = c.to_string();
-
-                            cx.show_text(text.as_str()).expect("prints the char");
-                            x += cx.text_extents(text.as_str()).unwrap().width()
-                                + char_adjust_width(c);
-                        }
-                    }
-                }
-                if let Some(t) = k.to_unicode().map(Touch::from) {
-                    self.practice.press(&t);
-                }
-                self.char_count += 1;
+            Msg::KeyPressed(_, t, _, _) => {
+                self.draw(&t);
+                self.practice.press(&t);
             }
         };
     }
@@ -358,9 +347,11 @@ impl SimpleComponent for App {
             set_title: Some("Type Touching"),
             set_default_size: (800, 640),
             add_controller = gtk::EventControllerKey {
-                connect_key_pressed[sender] => move |_, keyval, keycode, state| {
+                connect_key_pressed[sender] => move |_, keyval, _, state| {
                     let now = Instant::now();
-                    sender.input(Msg::KeyPressed(keyval, keycode, state, now));
+                    if let Some(touch) = keyval.to_unicode().map(Touch::from) {
+                        sender.input(Msg::KeyPressed(keyval, touch, state, now));
+                    }
                     Inhibit(false)
                 }
             },

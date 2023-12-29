@@ -12,7 +12,7 @@ use rand::{
     Rng,
 };
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub(crate) enum Touch {
     Char(char),
     Space,
@@ -83,7 +83,7 @@ impl Challenge {
             .with_context(|| TouchTypingError::FileParseError)?
             .lines()
             .filter_map(
-                |line| match line.split(" ").collect::<Vec<&str>>().as_slice() {
+                |line| match line.split(' ').collect::<Vec<&str>>().as_slice() {
                     [word, count] => {
                         let count = count.parse::<u32>().ok()?;
                         Some((Word::from(word), count))
