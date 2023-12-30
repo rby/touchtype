@@ -7,4 +7,5 @@ use crate::session::{Practice, Touch};
 pub(crate) enum Msg {
     KeyPressed(Key, Touch, ModifierType, Instant),
     PracticeEnd(Practice),
+    PracticeStart(Practice),
 }
