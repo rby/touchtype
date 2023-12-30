@@ -28,7 +28,7 @@ impl<'a> HasDrawHandler<'a> for PracticeComp {
 }
 
 impl PracticeComp {
-    fn draw(&mut self, t: &Touch) {
+    fn draw(&mut self, t: Option<Touch>) {
         let cx = self.handler.get_context();
 
         // TODO we can also clear just one rectangle
@@ -81,10 +81,12 @@ impl PracticeComp {
                     cx.move_to(x, y);
                 }
                 TouchState::Current => {
-                    if self.practice.check(&t) == Some(true) {
-                        cx.set_source_rgb(0.0, 1.0, 0.0);
-                    } else {
-                        cx.set_source_rgb(1.0, 0.0, 0.0);
+                    if let Some(t) = t {
+                        if self.practice.check(&t) == Some(true) {
+                            cx.set_source_rgb(0.0, 1.0, 0.0);
+                        } else {
+                            cx.set_source_rgb(1.0, 0.0, 0.0);
+                        }
                     }
                 }
 
@@ -151,7 +153,7 @@ impl SimpleComponent for PracticeComp {
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             Msg::KeyPressed(_, t, _, _) if !self.saved => {
-                self.draw(&t);
+                self.draw(Some(t));
                 if self.practice.press(&t).is_none() {
                     let p = self.practice.clone();
                     println!("practice saved to {}", p.name());
@@ -160,6 +162,12 @@ impl SimpleComponent for PracticeComp {
                         .expect("should output End event");
                     self.saved = true;
                 }
+            }
+            Msg::PracticeStart(practice) => {
+                println!("received a new practice");
+                self.saved = false;
+                self.practice = practice;
+                self.draw(None);
             }
             _ => (),
         };
