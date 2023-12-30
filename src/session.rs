@@ -330,6 +330,27 @@ impl<'a> Iterator for PIter<'a> {
         }
     }
 }
+pub(crate) struct PracticeGenerator<R> {
+    rng: R,
+    size: usize,
+    path: String,
+}
+
+impl<R> PracticeGenerator<R> {
+    pub(crate) fn new(rng: R, size: usize, path: &str) -> PracticeGenerator<R> {
+        PracticeGenerator {
+            rng,
+            size,
+            path: path.to_string(),
+        }
+    }
+    pub(crate) fn generate(&mut self) -> Result<Practice>
+    where
+        R: rand::Rng,
+    {
+        Practice::generate(&mut self.rng, self.size, &Path::new(self.path.as_str()))
+    }
+}
 
 #[cfg(test)]
 mod tests {
