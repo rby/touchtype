@@ -2,9 +2,10 @@ use comp::keyboard::KeyboardState;
 use comp::practice::PracticeComp;
 use comp::stats::StatsComp;
 use gtk::prelude::*;
+use rand::rngs::ThreadRng;
 use rand::thread_rng;
 use relm4::{gtk::Inhibit, prelude::*};
-use session::Practice;
+use session::{Practice, PracticeGenerator};
 use std::convert::identity;
 use std::path::Path;
 use std::time::Instant;
@@ -25,11 +26,12 @@ struct App {
     stats: Controller<StatsComp>,
     keyboard_state: Controller<KeyboardState>,
     practice_comp: Controller<PracticeComp>,
+    practice_generator: PracticeGenerator<ThreadRng>,
 }
 
 #[relm4::component]
 impl SimpleComponent for App {
-    type Init = Practice;
+    type Init = (Practice, PracticeGenerator<ThreadRng>);
     type Input = Msg;
     type Output = Msg;
 
@@ -61,10 +63,11 @@ impl SimpleComponent for App {
     }
 
     fn init(
-        practice: Self::Init,
+        init: Self::Init,
         root: &Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let (practice, practice_generator) = init;
         let stats = StatsComp::builder().launch(Stats::new()).detach();
         let keyboard_state = KeyboardState::builder().launch(()).detach();
         let practice_comp = PracticeComp::builder()
@@ -74,6 +77,7 @@ impl SimpleComponent for App {
             stats,
             keyboard_state,
             practice_comp,
+            practice_generator,
         };
         let my_stats = model.stats.widget();
         let my_ks = model.keyboard_state.widget();
@@ -82,9 +86,9 @@ impl SimpleComponent for App {
 
         ComponentParts { model, widgets }
     }
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            Msg::KeyPressed(_, _, _, _) => {
+            Msg::KeyPressed(_, _, _, _) | Msg::PracticeStart(_) => {
                 self.stats.emit(msg.clone());
                 self.keyboard_state.emit(msg.clone());
                 self.practice_comp.emit(msg.clone());
@@ -95,6 +99,11 @@ impl SimpleComponent for App {
                 practice
                     .save(path.as_path())
                     .expect("practice should be saved");
+                let practice = self
+                    .practice_generator
+                    .generate()
+                    .expect("generate a new practice");
+                sender.input(Msg::PracticeStart(practice));
             }
         }
     }
@@ -103,9 +112,11 @@ impl SimpleComponent for App {
 // TODO should be a result later
 fn main() {
     let app = RelmApp::new("TouchTyping Master");
-    let mut rng = thread_rng();
-    let practice = Practice::generate(&mut rng, 25, Path::new("./data/t8.shakespeare.freq"))
-        .expect("should load correctly");
-    println!("next practice is : {practice:?}");
-    app.run::<App>(practice);
+    let rng = thread_rng();
+    let mut practice_generator =
+        PracticeGenerator::<ThreadRng>::new(rng, 25, "./data/t8.shakespeare.freq");
+    let practice = practice_generator
+        .generate()
+        .expect("should generate first practice");
+    app.run::<App>((practice, practice_generator));
 }
