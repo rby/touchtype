@@ -225,11 +225,7 @@ impl std::fmt::Debug for Practice {
 }
 impl std::fmt::Display for Practice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "expected = {:?}",
-            self.challenge.expected_at(self.cursor)
-        )
+        write!(f, "{:?}", self)
     }
 }
 
@@ -292,15 +288,14 @@ impl Practice {
 pub(crate) struct PIter<'a> {
     practice: &'a Practice,
     challenge_iter: CIter<'a>,
-    next: Option<(Touch, TouchState, WordIndex)>,
 }
 
 pub(crate) type WordIndex = usize;
 
 #[derive(Clone)]
 pub(crate) enum TouchState {
-    Current,
     Attempted(bool),
+    Current(bool),
     Next,
     Future,
 }
@@ -312,9 +307,13 @@ impl<'a> PIter<'a> {
     ///
     fn state(&self) -> TouchState {
         if self.challenge_iter.ix == self.practice.cursor {
-            TouchState::Current
+            TouchState::Current(self.practice.cursor == 0)
         } else if self.challenge_iter.ix == self.practice.cursor + 1 {
-            TouchState::Next
+            if self.practice.cursor == 0 {
+                TouchState::Future
+            } else {
+                TouchState::Next
+            }
         } else if self.challenge_iter.ix > self.practice.cursor + 1 {
             TouchState::Future
         } else {
@@ -327,39 +326,19 @@ impl<'a> PIter<'a> {
         }
     }
     fn new(practice: &'a Practice) -> Self {
-        let mut challenge_iter = practice.challenge.iter();
-        let next = challenge_iter.next().map(|(t, w)| {
-            let state = if practice.cursor == 0 {
-                TouchState::Next
-            } else if practice.cursor == 1 {
-                TouchState::Current
-            } else {
-                if let Some(b) = practice.attempt.get(0) {
-                    TouchState::Attempted(*b)
-                } else {
-                    unreachable!("should never happen")
-                }
-            };
-            (t, state, w)
-        });
+        let challenge_iter = practice.challenge.iter();
         PIter {
             practice,
             challenge_iter,
-            next,
         }
     }
 }
 
 impl<'a> Iterator for PIter<'a> {
     type Item = (Touch, TouchState, WordIndex);
-    // TODO this is not correct to be honest
     fn next(&mut self) -> Option<Self::Item> {
-        let next_state = self.state();
-        let res = self.next.clone();
-        if res.is_some() {
-            self.next = self.challenge_iter.next().map(|(t, w)| (t, next_state, w));
-        }
-        res
+        let state = self.state();
+        self.challenge_iter.next().map(|(t, w)| (t, state, w))
     }
 }
 pub(crate) struct PracticeGenerator<R> {

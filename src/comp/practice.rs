@@ -80,7 +80,12 @@ impl PracticeComp {
                     cx.show_text("_").expect("underline");
                     cx.move_to(x, y);
                 }
-                TouchState::Current => {
+                TouchState::Current(is_first) => {
+                    if is_first {
+                        cx.move_to(x, y + UNIT / 5.0);
+                        cx.show_text("_").expect("underline");
+                        cx.move_to(x, y);
+                    }
                     if let Some(t) = t {
                         if self.practice.check(&t) == Some(true) {
                             cx.set_source_rgb(0.0, 1.0, 0.0);
