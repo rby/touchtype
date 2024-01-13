@@ -1,7 +1,8 @@
+/// Messages and events shared between components
 use relm4::gtk::gdk::{Key, ModifierType};
 use std::time::Instant;
 
-use crate::session::{Practice, Touch};
+use crate::model::{Practice, Touch};
 
 #[derive(Debug, Clone)]
 pub(crate) enum Msg {

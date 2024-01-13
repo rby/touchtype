@@ -2,21 +2,21 @@ use comp::keyboard::KeyboardState;
 use comp::practice::PracticeComp;
 use comp::stats::StatsComp;
 use gtk::prelude::*;
+use model::{Practice, PracticeGenerator};
 use rand::rngs::ThreadRng;
 use rand::thread_rng;
 use relm4::{gtk::Inhibit, prelude::*};
-use session::{Practice, PracticeGenerator};
 use std::convert::identity;
 use std::path::Path;
 use std::time::Instant;
 
 mod comp;
+mod model;
 mod msg;
-mod session;
 mod stats;
 mod utils;
+use crate::model::Touch;
 use crate::msg::Msg;
-use crate::session::Touch;
 use crate::stats::Stats;
 
 #[derive(Debug)]

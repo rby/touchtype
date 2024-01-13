@@ -1,4 +1,11 @@
+/// Holds the domain model for the TouchTyping
+///
+///
 use anyhow::{Context, Result};
+use rand::{
+    distributions::{Distribution, WeightedIndex},
+    Rng,
+};
 use std::{
     fmt::Display,
     fs,
@@ -9,6 +16,9 @@ use std::{
 };
 use thiserror::Error;
 
+/// Simple type alias for WordIndex
+pub(crate) type WordIndex = usize;
+
 #[derive(Error, Debug)]
 pub(crate) enum TouchTypingError {
     #[error("a 'word count' was expected")]
@@ -16,11 +26,8 @@ pub(crate) enum TouchTypingError {
     #[error("invalid path")]
     InvalidPathError,
 }
-use rand::{
-    distributions::{Distribution, WeightedIndex},
-    Rng,
-};
 
+/// Separates between Space and any other charactes.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub(crate) enum Touch {
     Char(char),
@@ -43,24 +50,25 @@ impl Display for Touch {
     }
 }
 
-impl Touch {
-    pub(crate) fn to_string(&self) -> String {
-        match self {
-            Self::Char(c) => c.to_string(),
-            Self::Space => " ".to_string(),
-        }
-    }
-}
+impl Touch {}
 
+/// Sequence of words that the user will try
 #[derive(Debug, Clone)]
 pub(crate) struct Challenge {
+    /// The words in sequence
     words: Vec<Word>,
+    /// number of Touches in the challenge
     total_count: usize, // total count of chars including spaces
-    skip_index: Vec<usize>,
+    /// If the challenge is a sequence of chars, this index will give the
+    /// starting offset for each word.
+    skip_index: Vec<WordIndex>,
 }
 
 impl FromStr for Challenge {
-    type Err = (); // TODO should be the never type
+    // TODO should be the never type
+    type Err = ();
+    /// The challenge as a string of space separated words.
+    /// Mostly for test purpose.
     fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
         Ok(Self::from(
             s.split_whitespace().map(Word::from).collect::<Vec<Word>>(),
@@ -77,7 +85,6 @@ impl From<Vec<Word>> for Challenge {
             skip_index.push(skips);
             skips += w.len() + 1;
         }
-
         Challenge {
             words,
             total_count,
@@ -87,6 +94,14 @@ impl From<Vec<Word>> for Challenge {
 }
 
 impl Challenge {
+    /// Returns a random challenge
+    ///
+    /// # Arguments
+    ///
+    /// * `size`: number of words in the challenge
+    /// * `path`: path to the file the .freq files that contains the words to
+    /// sample from,
+    ///
     pub(crate) fn generate<R: Rng>(rng: &mut R, size: usize, path: &Path) -> Result<Challenge> {
         let (words, freqs): (Vec<Word>, Vec<u32>) = std::fs::read_to_string(path)
             .with_context(|| TouchTypingError::FileParseError)?
@@ -110,6 +125,8 @@ impl Challenge {
         Ok(Challenge::from(words))
     }
 
+    ///
+    /// Returns an iterator for words in the challenge.
     pub(crate) fn iter<'a>(&'a self) -> CIter<'a> {
         CIter {
             challenge: self,
@@ -118,16 +135,17 @@ impl Challenge {
         }
     }
 
-    pub(crate) fn expected_at(&self, count: usize) -> Option<Touch> {
-        if count >= self.total_count {
+    /// Returns the `Touch` expected at position `count` or None.
+    pub(crate) fn expected_at(&self, position: usize) -> Option<Touch> {
+        if position >= self.total_count {
             None
         } else {
-            let i = self.skip_index.partition_point(|x| *x <= count);
+            let i = self.skip_index.partition_point(|x| *x <= position);
             if i > 0 {
                 let skip = self.skip_index.get(i - 1)?;
 
                 let word = self.words.iter().nth(i - 1)?;
-                let char_index = count - skip;
+                let char_index = position - skip;
                 if char_index >= word.len() {
                     Some(Touch::Space)
                 } else {
@@ -139,11 +157,13 @@ impl Challenge {
             }
         }
     }
+    /// Returns the number of `Touch`s expected in the challenge.
     pub(crate) fn len(&self) -> usize {
         self.total_count
     }
 }
 
+/// A `Touch` iterator for a challenge
 pub(crate) struct CIter<'a> {
     challenge: &'a Challenge,
     w_ix: usize,
@@ -151,13 +171,16 @@ pub(crate) struct CIter<'a> {
 }
 
 impl<'a> Iterator for CIter<'a> {
-    type Item = (Touch, usize);
+    /// The `Touch` and it's word index.
+    /// If it's a space then the word index will be of the previous one.
+    type Item = (Touch, WordIndex);
     fn next(&mut self) -> Option<Self::Item> {
         if self.ix < self.challenge.len() {
-            // TODO implement it more efficiently here
+            // TODO improve the performance
             let res = match self.challenge.expected_at(self.ix) {
                 Some(Touch::Space) => {
-                    let res = Some((Touch::Space, self.w_ix.clone()));
+                    let wix = self.w_ix;
+                    let res = Some((Touch::Space, wix));
                     self.w_ix += 1;
                     res
                 }
@@ -171,23 +194,26 @@ impl<'a> Iterator for CIter<'a> {
     }
 }
 
+/// New type for a Word which is just a string
 #[derive(Clone, Debug)]
 pub(crate) struct Word(String);
 
+/// Records the current progress in the challenge.
+/// `keys[i]` will be true if the touch was expected, otherwise false.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Attempt {
-    keys: Vec<bool>,
+    touches: Vec<bool>,
 }
 
 impl Attempt {
     pub(crate) fn new() -> Self {
-        Attempt { keys: vec![] }
+        Attempt { touches: vec![] }
     }
     pub(crate) fn add(&mut self, success: bool) {
-        self.keys.push(success);
+        self.touches.push(success);
     }
     pub(crate) fn get(&self, i: usize) -> Option<&bool> {
-        self.keys.get(i)
+        self.touches.get(i)
     }
 }
 
@@ -256,8 +282,8 @@ impl Practice {
     pub(crate) fn save(self, path: &Path) -> Result<String> {
         let path = path.join(self.name);
         let path = path.as_path();
-        let succ = self.attempt.keys.iter().filter(|x| **x).count();
-        let total = self.attempt.keys.len();
+        let succ = self.attempt.touches.iter().filter(|x| **x).count();
+        let total = self.attempt.touches.len();
         let mut f = fs::File::create(&path).context(format!("cannot create file at {:?}", path))?;
         writeln!(f, "total = {}", total)?;
         writeln!(f, "succ = {}", succ)?;
@@ -273,6 +299,9 @@ impl Practice {
         self.challenge.expected_at(self.cursor).map(|e| e == *touch)
     }
 
+    /// Records the attempt of pressing a touch in a challenge
+    /// if no touch is expected (challenge finished) we return None.
+    /// Otherwise we return wether the touch was expected or not.
     pub(crate) fn press(&mut self, touch: &Touch) -> Option<bool> {
         let success = self.check(touch)?;
         self.attempt.add(success);
@@ -280,21 +309,28 @@ impl Practice {
         Some(success)
     }
 }
+
+/// Given an underlying challenge, this is an iterator that
+/// helps displaying the current state of progress.
 pub(crate) struct PIter<'a> {
     practice: &'a Practice,
     challenge_iter: CIter<'a>,
 }
 
-pub(crate) type WordIndex = usize;
-
+/// a `Touch` state within a practice, mostly to help with UI.
 #[derive(Clone)]
 pub(crate) enum TouchState {
+    /// was attempted successfully or not
     Attempted(bool),
+    /// the last one attempted.
     Current(bool),
+    /// it's the next expected touch
     Next,
+    /// part of the future
     Future,
 }
 
+/// Iterates on a practice and give the state of each touch in the challenge.
 impl<'a> PIter<'a> {
     fn state(&self) -> TouchState {
         if self.challenge_iter.ix == self.practice.cursor {
@@ -316,6 +352,8 @@ impl<'a> PIter<'a> {
             }
         }
     }
+
+    /// Returns a new iterator for the practice.
     fn new(practice: &'a Practice) -> Self {
         PIter {
             practice,
@@ -325,6 +363,7 @@ impl<'a> PIter<'a> {
 }
 
 impl<'a> Iterator for PIter<'a> {
+    /// Touch, state and its word index.
     type Item = (Touch, TouchState, WordIndex);
     fn next(&mut self) -> Option<Self::Item> {
         // gets the state *before* calling `next` on `challenge_iter`
@@ -333,13 +372,20 @@ impl<'a> Iterator for PIter<'a> {
     }
 }
 
+/// A generator for the practice.
+///
+/// R holds usually a Random Number Generator
 pub(crate) struct PracticeGenerator<R> {
+    /// Generator
     rng: R,
+    /// Size in number of words
     size: usize,
+    /// Path to use for generating words.
     path: String,
 }
 
 impl<R> PracticeGenerator<R> {
+    /// Returns a new Generator.
     pub(crate) fn new(rng: R, size: usize, path: &str) -> PracticeGenerator<R> {
         PracticeGenerator {
             rng,
@@ -347,6 +393,7 @@ impl<R> PracticeGenerator<R> {
             path: path.to_string(),
         }
     }
+    /// Generates a new practice.
     pub(crate) fn generate(&mut self) -> Result<Practice>
     where
         R: rand::Rng,

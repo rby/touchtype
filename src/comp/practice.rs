@@ -3,10 +3,10 @@ use relm4::gtk;
 use relm4::prelude::*;
 use relm4::{drawing::DrawHandler, ComponentParts, ComponentSender, SimpleComponent};
 
+use crate::model::Practice;
+use crate::model::Touch;
+use crate::model::TouchState;
 use crate::msg::Msg;
-use crate::session::Practice;
-use crate::session::Touch;
-use crate::session::TouchState;
 use crate::utils::{Clear, HasDrawHandler};
 
 const UNIT: f64 = 30.0;
