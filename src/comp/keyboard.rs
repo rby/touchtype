@@ -1,5 +1,6 @@
 use gtk::prelude::*;
 use relm4::gtk;
+use relm4::gtk::gdk::Key;
 use relm4::prelude::*;
 use relm4::{drawing::DrawHandler, ComponentParts, ComponentSender, SimpleComponent};
 
@@ -67,12 +68,47 @@ const LAYOUT: &'static [usize] = &[14, 14, 13, 12, 1];
 const HSTART: f64 = 100.0;
 const VSTART: f64 = 100.0;
 
-pub(crate) struct KeyboardState {
+pub(crate) struct KeyboardComp {
     handler: DrawHandler,
 }
 
+impl KeyboardComp {
+    fn draw(&mut self, k: Option<Key>) {
+        let cx = self.handler.get_context();
+        cx.select_font_face(
+            "Arial Black",
+            gtk::cairo::FontSlant::Normal,
+            gtk::cairo::FontWeight::Bold,
+        );
+
+        cx.set_source_rgb(0.0, 0.0, 0.0);
+        cx.set_font_size(18.0);
+        let mut x = VSTART;
+        let mut y = HSTART;
+        let mut iter = QWERTY.iter();
+        for row in LAYOUT {
+            for _ in 0..*row {
+                cx.set_source_rgb(0.0, 0.0, 0.0);
+                if let Some((cell, size)) = iter.next() {
+                    match k.and_then(|k| k.name()) {
+                        Some(x) if x.eq_ignore_ascii_case(*cell) => {
+                            cx.set_source_rgb(0.0, 1.0, 0.0)
+                        }
+                        _ => (),
+                    };
+                    cx.move_to(x, y);
+                    cx.show_text(cell).expect("should display this char");
+                    x += UNIT * size;
+                }
+            }
+            x = VSTART;
+            y += UNIT;
+        }
+    }
+}
+
 #[relm4::component(pub)]
-impl SimpleComponent for KeyboardState {
+impl SimpleComponent for KeyboardComp {
     type Init = ();
     type Input = Msg;
     type Output = ();
@@ -95,7 +131,7 @@ impl SimpleComponent for KeyboardState {
     ) -> ComponentParts<Self> {
         let handler = DrawHandler::new();
 
-        let model = KeyboardState { handler };
+        let model = KeyboardComp { handler };
         let area = model.handler.drawing_area();
 
         let widgets = view_output!();
@@ -105,39 +141,8 @@ impl SimpleComponent for KeyboardState {
 
     fn update(&mut self, _message: Self::Input, _sender: ComponentSender<Self>) {
         match _message {
-            Msg::KeyPressed(k, _, _, _) => {
-                let cx = self.handler.get_context();
-                cx.select_font_face(
-                    "Arial Black",
-                    gtk::cairo::FontSlant::Normal,
-                    gtk::cairo::FontWeight::Bold,
-                );
-
-                cx.set_source_rgb(0.0, 0.0, 0.0);
-                cx.set_font_size(18.0);
-                let mut x = VSTART;
-                let mut y = HSTART;
-                let mut iter = QWERTY.iter();
-                for row in LAYOUT {
-                    for _ in 0..*row {
-                        cx.set_source_rgb(0.0, 0.0, 0.0);
-                        if let Some((cell, size)) = iter.next() {
-                            match k.name() {
-                                Some(x) if x.eq_ignore_ascii_case(*cell) => {
-                                    cx.set_source_rgb(0.0, 1.0, 0.0)
-                                }
-                                _ => (),
-                            };
-                            cx.move_to(x, y);
-                            cx.show_text(cell).expect("should display this char");
-                            x += UNIT * size;
-                        }
-                    }
-                    x = VSTART;
-                    y += UNIT;
-                }
-            }
-            _ => (),
+            Msg::KeyPressed(k, _, _, _) => self.draw(Some(k)),
+            _ => self.draw(None),
         };
     }
 }

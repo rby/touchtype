@@ -169,7 +169,7 @@ impl SimpleComponent for PracticeComp {
                 }
             }
             Msg::PracticeStart(practice) => {
-                println!("received a new practice");
+                println!("[PracticeComp] received a new practice");
                 self.saved = false;
                 self.practice = practice;
                 self.draw(None);

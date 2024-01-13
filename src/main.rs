@@ -1,14 +1,15 @@
-use comp::keyboard::KeyboardState;
+use comp::keyboard::KeyboardComp;
 use comp::practice::PracticeComp;
 use comp::stats::StatsComp;
 use gtk::prelude::*;
 use model::{Practice, PracticeGenerator};
 use rand::rngs::ThreadRng;
 use rand::thread_rng;
+use relm4::tokio;
 use relm4::{gtk::Inhibit, prelude::*};
 use std::convert::identity;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 mod comp;
 mod model;
@@ -24,16 +25,17 @@ struct UpdateDrawingMsg;
 
 struct App {
     stats: Controller<StatsComp>,
-    keyboard_state: Controller<KeyboardState>,
+    keyboard_state: Controller<KeyboardComp>,
     practice_comp: Controller<PracticeComp>,
     practice_generator: PracticeGenerator<ThreadRng>,
 }
 
 #[relm4::component]
-impl SimpleComponent for App {
+impl Component for App {
     type Init = (Practice, PracticeGenerator<ThreadRng>);
     type Input = Msg;
     type Output = Msg;
+    type CommandOutput = Msg;
 
     view! {
         gtk::Window {
@@ -69,7 +71,8 @@ impl SimpleComponent for App {
     ) -> ComponentParts<Self> {
         let (practice, practice_generator) = init;
         let stats = StatsComp::builder().launch(Stats::new()).detach();
-        let keyboard_state = KeyboardState::builder().launch(()).detach();
+        let keyboard_state = KeyboardComp::builder().launch(()).detach();
+        let msg = Msg::PracticeStart(practice.clone());
         let practice_comp = PracticeComp::builder()
             .launch(practice)
             .forward(sender.input_sender(), identity);
@@ -83,15 +86,23 @@ impl SimpleComponent for App {
         let my_ks = model.keyboard_state.widget();
         let my_practice = model.practice_comp.widget();
         let widgets = view_output!();
+        sender.command(|out, shutdown| {
+            shutdown.register(async move{
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                out.send(msg).unwrap()
+            })
+            .drop_on_shutdown()
+        });
 
         ComponentParts { model, widgets }
     }
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Msg::KeyPressed(_, _, _, _) | Msg::PracticeStart(_) => {
+                println!("emitting {:?}", msg);
+                self.practice_comp.emit(msg.clone());
                 self.stats.emit(msg.clone());
                 self.keyboard_state.emit(msg.clone());
-                self.practice_comp.emit(msg.clone());
             }
             Msg::PracticeEnd(practice) => {
                 let home = env!("HOME");
@@ -106,6 +117,14 @@ impl SimpleComponent for App {
                 sender.input(Msg::PracticeStart(practice));
             }
         }
+    }
+    fn update_cmd(
+            &mut self,
+            message: Self::CommandOutput,
+            sender: ComponentSender<Self>,
+            root: &Self::Root,
+        ) {
+        self.update(message, sender, root)
     }
 }
 
