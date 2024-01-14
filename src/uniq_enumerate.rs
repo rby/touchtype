@@ -2,90 +2,99 @@
 /// for a contiguous sequnce of equal vlaues.
 /// TODO example, here
 ///
-struct UniqEnumerateIter<'a, T: Iterator> {
-    inner_iter: &'a mut T,
-    last: Option<T::Item>,
+pub(crate) struct UniqEnumerateIter<'a, I, A> {
+    inner_iter: &'a mut I,
+    last: Option<A>,
     ix: usize,
 }
 
-struct UniqEnumerateProjIter<'a, T, R, F> {
-    inner_iter: &'a mut T,
-    last: Option<&'a R>,
+pub(crate) struct UniqEnumerateProjIter<'a, I, A, F> {
+    inner_iter: &'a mut I,
+    last: Option<A>,
     ix: usize,
     proj: F,
 }
 
-impl<'a, Item: PartialEq + 'a, T: Iterator<Item = &'a Item>> Iterator for UniqEnumerateIter<'a, T> {
-    type Item = (usize, &'a Item);
+impl<'a, Item, I> Iterator for UniqEnumerateIter<'a, I, Item>
+where
+    Item: PartialEq,
+    I: Iterator<Item = Item>,
+{
+    type Item = (usize, Item);
     fn next(&mut self) -> Option<Self::Item> {
-        if let some_next @ Some(next) = self.inner_iter.next() {
-            if let Some(last) = self.last {
-                if last != next {
-                    self.ix += 1;
-                    self.last = some_next;
-                }
-                Some((self.ix, next))
-            } else {
-                self.last = some_next;
-                Some((self.ix, next))
+        if self.last.is_some() {
+            let ix = self.ix;
+            let maybe_next = self.inner_iter.next();
+            let is_eq = self.last == maybe_next;
+            if !is_eq {
+                self.ix += 1;
             }
+            let res = if let Some(next) = maybe_next {
+                self.last.replace(next)
+            } else {
+                self.last.take()
+            };
+            res.map(|x| (ix, x))
         } else {
             None
         }
     }
 }
 
-impl<'a, F, Item: 'a, R: PartialEq + 'a, T: Iterator<Item = &'a Item>> Iterator
-    for UniqEnumerateProjIter<'a, T, R, F>
+impl<'a, Proj, I, F> Iterator for UniqEnumerateProjIter<'a, I, <I as Iterator>::Item, F>
 where
-    F: Fn(T::Item) -> &'a R,
+    Proj: PartialEq,
+    I: Iterator,
+    F: Fn(&<I as Iterator>::Item) -> Proj,
 {
-    type Item = (usize, &'a Item);
+    type Item = (usize, I::Item);
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(next) = self.inner_iter.next() {
-            let r = (self.proj)(next);
-            if let Some(last) = self.last {
-                if last != r {
-                    self.ix += 1;
-                    self.last = Some(r);
-                }
-                Some((self.ix, next))
-            } else {
-                self.last = Some(r);
-                Some((self.ix, next))
+        if self.last.is_some() {
+            let ix = self.ix;
+            let maybe_next = self.inner_iter.next();
+            let is_eq = self.last.as_ref().map(|x| (self.proj)(&x))
+                == maybe_next.as_ref().map(|x| (self.proj)(&x));
+            if !is_eq {
+                self.ix += 1;
             }
+            let res = if let Some(next) = maybe_next {
+                self.last.replace(next)
+            } else {
+                self.last.take()
+            };
+            res.map(|x| (ix, x))
         } else {
             None
         }
     }
 }
 
-pub(crate) fn enumerate<'a, I, Item>(iter: &'a mut I) -> impl Iterator<Item = (usize, &'a Item)>
+pub(crate) fn enumerate<'a, I, Item>(iter: &'a mut I) -> UniqEnumerateIter<'a, I, Item>
 where
-    Item: PartialEq + 'a,
-    I: Iterator<Item = &'a Item>,
+    Item: PartialEq,
+    I: Iterator<Item = Item>,
 {
+    let next = iter.next();
     UniqEnumerateIter {
         inner_iter: iter,
-        last: None,
+        last: next,
         ix: 0,
     }
 }
 
-pub(crate) fn enumerate_proj<'a, Item, I, R, F>(
+pub(crate) fn enumerate_proj<'a, I, R, F>(
     iter: &'a mut I,
     f: F,
-) -> impl Iterator<Item = (usize, &'a Item)>
+) -> UniqEnumerateProjIter<'a, I, <I as Iterator>::Item, F>
 where
-    Item: 'a,
-    I: Iterator<Item = &'a Item>,
-    <I as Iterator>::Item: 'a,
-    R: PartialEq + 'a,
-    F: Fn(<I as Iterator>::Item) -> &'a R,
+    I: Iterator,
+    R: PartialEq,
+    F: Fn(&<I as Iterator>::Item) -> R,
 {
+    let next = iter.next();
     UniqEnumerateProjIter {
         inner_iter: iter,
-        last: None,
+        last: next,
         ix: 0,
         proj: f,
     }
@@ -103,9 +112,9 @@ mod test {
     }
     #[test]
     pub fn it_projects_and_enumerate_only_uniq_values() {
-        let v = vec![("a", 1), ("b", 1), ("c", 2), ("d", 2), ("e", 3), ("f", 4)];
+        let v: Vec<(&str, u8)> = vec![("a", 1), ("b", 1), ("c", 2), ("d", 2), ("e", 3), ("f", 4)];
         let mut iter = v.iter();
-        let v: Vec<(usize, &(&str, u8))> = enumerate_proj(&mut iter, |x| &x.1).collect();
+        let v: Vec<(usize, &(&str, u8))> = enumerate_proj(&mut iter, |x| x.1).collect();
         assert_eq!(
             v,
             &[
@@ -115,6 +124,22 @@ mod test {
                 (1, &("d", 2)),
                 (2, &("e", 3)),
                 (3, &("f", 4))
+            ]
+        )
+    }
+    #[test]
+    pub fn it_can_detect_line_changes() {
+        let ints: std::ops::Range<i32> = 1..6;
+        let mut iter = ints.enumerate();
+        let v: Vec<(usize, (usize, i32))> = enumerate_proj(&mut iter, |x| x.0 / 3).collect();
+        assert_eq!(
+            v,
+            &[
+                (0, (0, 1)),
+                (0, (1, 2)),
+                (0, (2, 3)),
+                (1, (3, 4)),
+                (1, (4, 5))
             ]
         )
     }
