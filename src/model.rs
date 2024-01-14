@@ -404,7 +404,7 @@ impl<R> PracticeGenerator<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::session::Touch;
+    use crate::model::Touch;
 
     use super::{Challenge, FromStr};
     #[test]
