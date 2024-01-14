@@ -16,6 +16,7 @@ mod model;
 mod msg;
 mod stats;
 mod utils;
+mod uniq_enumerate;
 use crate::model::Touch;
 use crate::msg::Msg;
 use crate::stats::Stats;
