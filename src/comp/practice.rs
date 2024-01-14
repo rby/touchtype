@@ -57,14 +57,14 @@ impl PracticeComp {
         let mut y = HSTART;
         let mut cw = 0;
         for (c, state, i) in self.practice.iter() {
-            // reset x and go down every WORDS_PER_LINE words
+            // if the current word has changed
+            // and i is multiple of WORDS_PER_LINE
+            // reset x and go down
             if i != cw && i % WORDS_PER_LINE == 0 {
                 x = VSTART;
                 y += UNIT;
             }
-            if cw != i {
-                cw += 1;
-            }
+            cw = i;
             if c == Touch::Space {
                 x += 7.0;
             }
