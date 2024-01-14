@@ -107,14 +107,13 @@ impl PracticeComp {
             match c {
                 Touch::Space => {
                     cx.show_text(".").expect("print the char");
-                    x += cx.text_extents(".").unwrap().width();
-                    x += 7.0;
+                    x += cx.text_extents(".").unwrap().x_advance() + 7.0;
                 }
                 Touch::Char(c) => {
                     let text = c.to_string();
 
                     cx.show_text(text.as_str()).expect("prints the char");
-                    x += cx.text_extents(text.as_str()).unwrap().width() + char_adjust_width(c);
+                    x += cx.text_extents(text.as_str()).unwrap().x_advance(); // + char_adjust_width(c);
                 }
             }
         }
@@ -176,15 +175,5 @@ impl SimpleComponent for PracticeComp {
             }
             _ => (),
         };
-    }
-}
-
-/// Returns the space after the width of the char to adjust for
-/// specific chars
-fn char_adjust_width(c: char) -> f64 {
-    match c {
-        'i' | 'l' => 1.2,
-        'w' | 'x' | 'y' => 0.8,
-        _ => 1.0,
     }
 }
