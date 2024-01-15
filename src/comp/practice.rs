@@ -7,6 +7,7 @@ use crate::model::Practice;
 use crate::model::Touch;
 use crate::model::TouchState;
 use crate::msg::Msg;
+use crate::uniq_enumerate::run_enumerate_with;
 use crate::utils::{Clear, HasDrawHandler};
 
 const UNIT: f64 = 30.0;
@@ -56,15 +57,15 @@ impl PracticeComp {
         let mut x = VSTART;
         let mut y = HSTART;
         let mut cw = 0;
-        for (c, state, i) in self.practice.iter() {
-            // if the current word has changed
-            // and i is multiple of WORDS_PER_LINE
-            // reset x and go down
-            if i != cw && i % WORDS_PER_LINE == 0 {
+        for (w, (c, state, _)) in
+            run_enumerate_with(&mut self.practice.iter(), |x| x.2 / WORDS_PER_LINE)
+        {
+            // if the current word has changed reset x and go down
+            if w != cw {
                 x = VSTART;
                 y += UNIT;
             }
-            cw = i;
+            cw = w;
             if c == Touch::Space {
                 x += 7.0;
             }
