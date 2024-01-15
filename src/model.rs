@@ -1,4 +1,10 @@
-/// Holds the domain model for the TouchTyping
+/// Domain model for the App.
+///
+/// Challenge: A randomly generated sequence of words
+/// Practice: The challenge on top of which we put attempts and a cursor
+/// Touch: Key is overloaded term (GTK) but it just mean a key
+/// Attempt: sequence (sometimes uncomplete) of true or false wether key was
+/// successfull typed.
 ///
 ///
 use anyhow::{Context, Result};
@@ -21,18 +27,91 @@ pub(crate) type WordIndex = usize;
 
 #[derive(Error, Debug)]
 pub(crate) enum TouchTypingError {
-    #[error("a 'word count' was expected")]
+    #[error("A line for form 'word(str) count(usize)' was expected")]
     FileParseError,
     #[error("invalid path")]
     InvalidPathError,
 }
 
-/// Separates between Space and any other charactes.
+/// Differentiates between Space and any other characters.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub(crate) enum Touch {
     Char(char),
     Space,
 }
+
+/// Sequence of words that the user will try
+#[derive(Debug, Clone)]
+pub(crate) struct Challenge {
+    /// The words in sequence
+    words: Vec<Word>,
+    /// number of Touches in the challenge
+    total_count: usize, // total count of chars including spaces
+    /// If the challenge is a sequence of chars, this index will give the
+    /// starting offset for each word.
+    skip_index: Vec<WordIndex>,
+}
+
+/// A `Touch` iterator for a challenge
+pub(crate) struct CIter<'a> {
+    challenge: &'a Challenge,
+    word_ix: usize,
+    ix: usize,
+}
+
+/// New type for a Word which is just a string
+#[derive(Clone, Debug)]
+pub(crate) struct Word(String);
+
+/// Records the current progress in the challenge.
+/// `keys[i]` will be true if the touch was expected, otherwise false.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Attempt {
+    touches: Vec<bool>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Practice {
+    challenge: Challenge,
+    attempt: Attempt,
+    name: String,
+    /// max(index of next touch in the challenge, challenge.len())
+    cursor: usize,
+}
+
+/// Given an underlying challenge, this is an iterator that
+/// helps displaying the current state of progress.
+pub(crate) struct PIter<'a> {
+    practice: &'a Practice,
+    challenge_iter: CIter<'a>,
+}
+
+/// a `Touch` state within a practice, mostly to help with UI.
+#[derive(Clone)]
+pub(crate) enum TouchState {
+    /// was attempted successfully or not
+    Attempted(bool),
+    /// the last one attempted.
+    Current(bool),
+    /// it's the next expected touch
+    Next,
+    /// part of the future
+    Future,
+}
+
+/// A generator for the practice.
+///
+/// R holds usually a Random Number Generator
+pub(crate) struct PracticeGenerator<R> {
+    /// Random Number Generator
+    rng: R,
+    /// Size in number of words
+    size: usize,
+    /// Path to use for generating words.
+    path: String,
+}
+
+// Implementations
 
 impl From<char> for Touch {
     fn from(value: char) -> Self {
@@ -51,18 +130,6 @@ impl Display for Touch {
 }
 
 impl Touch {}
-
-/// Sequence of words that the user will try
-#[derive(Debug, Clone)]
-pub(crate) struct Challenge {
-    /// The words in sequence
-    words: Vec<Word>,
-    /// number of Touches in the challenge
-    total_count: usize, // total count of chars including spaces
-    /// If the challenge is a sequence of chars, this index will give the
-    /// starting offset for each word.
-    skip_index: Vec<WordIndex>,
-}
 
 impl FromStr for Challenge {
     // TODO should be the never type
@@ -98,6 +165,7 @@ impl Challenge {
     ///
     /// # Arguments
     ///
+    /// * `rng` : a Random number generator
     /// * `size`: number of words in the challenge
     /// * `path`: path to the file the .freq files that contains the words to
     /// sample from,
@@ -125,12 +193,11 @@ impl Challenge {
         Ok(Challenge::from(words))
     }
 
-    ///
     /// Returns an iterator for words in the challenge.
     pub(crate) fn iter<'a>(&'a self) -> CIter<'a> {
         CIter {
             challenge: self,
-            w_ix: 0,
+            word_ix: 0,
             ix: 0,
         }
     }
@@ -157,17 +224,11 @@ impl Challenge {
             }
         }
     }
+
     /// Returns the number of `Touch`s expected in the challenge.
     pub(crate) fn len(&self) -> usize {
         self.total_count
     }
-}
-
-/// A `Touch` iterator for a challenge
-pub(crate) struct CIter<'a> {
-    challenge: &'a Challenge,
-    w_ix: usize,
-    ix: usize,
 }
 
 impl<'a> Iterator for CIter<'a> {
@@ -179,12 +240,12 @@ impl<'a> Iterator for CIter<'a> {
             // TODO improve the performance
             let res = match self.challenge.expected_at(self.ix) {
                 Some(Touch::Space) => {
-                    let wix = self.w_ix;
+                    let wix = self.word_ix;
                     let res = Some((Touch::Space, wix));
-                    self.w_ix += 1;
+                    self.word_ix += 1;
                     res
                 }
-                other => other.map(|x| (x, self.w_ix)),
+                other => other.map(|x| (x, self.word_ix)),
             };
             self.ix += 1;
             res
@@ -192,17 +253,6 @@ impl<'a> Iterator for CIter<'a> {
             None
         }
     }
-}
-
-/// New type for a Word which is just a string
-#[derive(Clone, Debug)]
-pub(crate) struct Word(String);
-
-/// Records the current progress in the challenge.
-/// `keys[i]` will be true if the touch was expected, otherwise false.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Attempt {
-    touches: Vec<bool>,
 }
 
 impl Attempt {
@@ -229,15 +279,6 @@ impl Word {
     pub(crate) fn char_at(&self, i: usize) -> Option<char> {
         self.0.chars().nth(i)
     }
-}
-
-#[derive(Clone)]
-pub(crate) struct Practice {
-    challenge: Challenge,
-    attempt: Attempt,
-    name: String,
-    /// max(index of next touch in the challenge, challenge.len())
-    cursor: usize,
 }
 
 impl std::fmt::Debug for Practice {
@@ -310,26 +351,6 @@ impl Practice {
     }
 }
 
-/// Given an underlying challenge, this is an iterator that
-/// helps displaying the current state of progress.
-pub(crate) struct PIter<'a> {
-    practice: &'a Practice,
-    challenge_iter: CIter<'a>,
-}
-
-/// a `Touch` state within a practice, mostly to help with UI.
-#[derive(Clone)]
-pub(crate) enum TouchState {
-    /// was attempted successfully or not
-    Attempted(bool),
-    /// the last one attempted.
-    Current(bool),
-    /// it's the next expected touch
-    Next,
-    /// part of the future
-    Future,
-}
-
 /// Iterates on a practice and give the state of each touch in the challenge.
 impl<'a> PIter<'a> {
     fn state(&self) -> TouchState {
@@ -370,18 +391,6 @@ impl<'a> Iterator for PIter<'a> {
         let state = self.state();
         self.challenge_iter.next().map(|(t, w)| (t, state, w))
     }
-}
-
-/// A generator for the practice.
-///
-/// R holds usually a Random Number Generator
-pub(crate) struct PracticeGenerator<R> {
-    /// Generator
-    rng: R,
-    /// Size in number of words
-    size: usize,
-    /// Path to use for generating words.
-    path: String,
 }
 
 impl<R> PracticeGenerator<R> {

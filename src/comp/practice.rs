@@ -7,7 +7,7 @@ use crate::model::Practice;
 use crate::model::Touch;
 use crate::model::TouchState;
 use crate::msg::Msg;
-use crate::uniq_enumerate::run_enumerate_with;
+use crate::run_enumerate::run_enumerate_with;
 use crate::utils::{Clear, HasDrawHandler};
 
 const UNIT: f64 = 30.0;
